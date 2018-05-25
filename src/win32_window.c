@@ -26,7 +26,7 @@
 //========================================================================
 
 #include "internal.h"
-
+#include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -233,6 +233,8 @@ static void centerCursor(_GLFWwindow* window)
     int width, height;
     _glfwPlatformGetWindowSize(window, &width, &height);
     _glfwPlatformSetCursorPos(window, width / 2.0, height / 2.0);
+    window->win32.rdpLastX = INT_MAX;
+    window->win32.rdpLastY = INT_MAX;
 }
 
 // Updates the cursor image according to its cursor mode
@@ -856,11 +858,44 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             data = _glfw.win32.rawInput;
             if (data->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
             {
-                dx = data->data.mouse.lLastX - window->win32.lastCursorPosX;
-                dy = data->data.mouse.lLastY - window->win32.lastCursorPosY;
+                int cursorX, cursorY;
+                if (data->data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP)
+                {
+                    // As per https://github.com/Microsoft/DirectXTK/commit/ef56b63f3739381e451f7a5a5bd2c9779d2a7555
+                    const int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+                    const int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+                    cursorX = ((data->data.mouse.lLastX / 65535.0f) * width);
+                    cursorY = ((data->data.mouse.lLastY / 65535.0f) * height);
+                    if (window->win32.rdpLastX == INT_MAX)
+                    {
+                        dx = 0;
+                        dy = 0;
+                    }
+                    else
+                    {
+                        dx = cursorX - window->win32.rdpLastX;
+                        dy = cursorY - window->win32.rdpLastY;
+                    }
+                    window->win32.rdpLastX = cursorX;
+                    window->win32.rdpLastY = cursorY;
+                }
+                else
+                {
+                    cursorX = data->data.mouse.lLastX;
+                    cursorY = data->data.mouse.lLastY;
+                    dx = cursorX - window->win32.lastCursorPosX;
+                    dy = cursorY - window->win32.lastCursorPosY;
+                }
+                //printf("WM_INPUT: Motion (%x %d %d) absolute, position (%d %d).  Computed delta from (%d %d) is (%d %d)\n", data->data.mouse.usFlags, data->data.mouse.lLastX, data->data.mouse.lLastY, cursorX, cursorY, window->win32.lastCursorPosX, window->win32.lastCursorPosY, dx, dy);
             }
             else
             {
+                if (data->data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP)
+                {
+                    _glfwInputError(GLFW_PLATFORM_ERROR,
+                                    "Win32: Unexpected raw input combination MOUSE_VIRTUAL_DESKTOP but not MOUSE_MOVE_ABSOLUTE");
+                    break;
+                }
                 dx = data->data.mouse.lLastX;
                 dy = data->data.mouse.lLastY;
             }
@@ -1806,7 +1841,11 @@ void _glfwPlatformSetCursorPos(_GLFWwindow* window, double xpos, double ypos)
     window->win32.lastCursorPosY = pos.y;
 
     ClientToScreen(window->win32.handle, &pos);
-    SetCursorPos(pos.x, pos.y);
+    if (!SetCursorPos(pos.x, pos.y))
+    {
+        _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+                             "Win32: Failed to set cursor position");
+    }
 }
 
 void _glfwPlatformSetCursorMode(_GLFWwindow* window, int mode)
