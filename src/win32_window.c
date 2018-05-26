@@ -233,6 +233,9 @@ static void centerCursor(_GLFWwindow* window)
     int width, height;
     _glfwPlatformGetWindowSize(window, &width, &height);
     _glfwPlatformSetCursorPos(window, width / 2.0, height / 2.0);
+    window->win32.rdpLastX = width / 2;
+    window->win32.rdpLastY = height / 2;
+    window->win32.accumDx = window->win32.accumDy = 0;
 }
 
 // Updates the cursor image according to its cursor mode
@@ -851,7 +854,6 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             }
 
             data = _glfw.win32.rawInput;
-            //printf("Data count: %d\n", size);
             if (data->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
             {
                 int cursorX, cursorY;
@@ -860,18 +862,21 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
                 const int height = GetSystemMetrics((data->data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP) ? SM_CYVIRTUALSCREEN : SM_CYSCREEN);
                 cursorX = ((data->data.mouse.lLastX / 65535.0f) * width);
                 cursorY = ((data->data.mouse.lLastY / 65535.0f) * height);
-                if (window->win32.rdpLastX == INT_MAX)
-                {
-                    dx = 0;
-                    dy = 0;
-                }
-                else
-                {
-                    dx = cursorX - window->win32.rdpLastX;
-                    dy = cursorY - window->win32.rdpLastY;
-                }
+                POINT pos = { cursorX, cursorY };
+                ScreenToClient(window->win32.handle, &pos);
+                cursorX = pos.x;
+                cursorY = pos.y;
+                int width2, height2;
+                _glfwPlatformGetWindowSize(window, &width2, &height2);
+                //printf("Pos: %d %d, from %d %d\n", cursorX, cursorY, width2/2, height2/2);
+                dx = cursorX - window->win32.rdpLastX;
+                dy = cursorY - window->win32.rdpLastY;
                 window->win32.rdpLastX = cursorX;
                 window->win32.rdpLastY = cursorY;
+                if (cursorX == (width2 / 2) && cursorY == (height2 / 2))
+                {
+                    break;
+                }
                 //printf("WM_INPUT: Motion (%x %d %d) absolute, position (%d %d).  Computed delta from (? ?) is (%d %d)\n", data->data.mouse.usFlags, data->data.mouse.lLastX, data->data.mouse.lLastY, cursorX, cursorY, /*window->win32.lastCursorPosX, window->win32.lastCursorPosY, */dx, dy);
             }
             else
@@ -1204,7 +1209,7 @@ static int createNativeWindow(_GLFWwindow* window,
     unsigned char* xorMask = calloc(cursorWidth * cursorHeight / 8, sizeof(unsigned char));
     // Cursor creation might fail, but that's fine as we get NULL in that case,
     // which serves as an acceptable fallback blank cursor
-    window->win32.blankCursor = CreateCursor(window, 0, 0, cursorWidth, cursorHeight, andMask, xorMask);
+    window->win32.blankCursor = CreateCursor(NULL, 0, 0, cursorWidth, cursorHeight, andMask, xorMask);
     free(andMask);
     free(xorMask);
 
@@ -1785,19 +1790,12 @@ void _glfwPlatformPollEvents(void)
     window = _glfw.win32.disabledCursorWindow;
     if (window)
     {
-        //printf("Maybe centering, accumDx/Dy %d %d\n", window->win32.accumDx, window->win32.accumDy);
         // NOTE: Re-center the cursor only if it has moved since the last call,
         //       to avoid breaking glfwWaitEvents with WM_MOUSEMOVE
         if (window->win32.accumDx != 0 ||
             window->win32.accumDy != 0)
         {
-            int width, height;
-            _glfwPlatformGetWindowSize(window, &width, &height);
-
-            _glfwPlatformSetCursorPos(window, width / 2, height / 2);
-
-            window->win32.rdpLastX = window->win32.rdpLastX = INT_MAX;
-            window->win32.accumDx = window->win32.accumDy = 0;
+            centerCursor(window);
         }
     }
 }
