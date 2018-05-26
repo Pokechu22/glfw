@@ -277,10 +277,12 @@ typedef struct _GLFWwindowWin32
     // Whether to enable framebuffer transparency on DWM
     GLFWbool            transparent;
 
-    // The last received cursor position, regardless of source
-    int                 lastCursorPosX, lastCursorPosY;
+    // Accumulated cursor position changes, only used in WM_INPUT
+    int                 accumDx, accumDy;
     // Used for raw input over RDP, see WM_INPUT
     int                 rdpLastX, rdpLastY;
+    // An invisible cursor, needed for special cases (see WM_INPUT handler)
+    HCURSOR             blankCursor;
 
 } _GLFWwindowWin32;
 
