@@ -233,8 +233,6 @@ static void centerCursor(_GLFWwindow* window)
     int width, height;
     _glfwPlatformGetWindowSize(window, &width, &height);
     _glfwPlatformSetCursorPos(window, width / 2.0, height / 2.0);
-    window->win32.rdpLastX = INT_MAX;
-    window->win32.rdpLastY = INT_MAX;
 }
 
 // Updates the cursor image according to its cursor mode
@@ -853,6 +851,7 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             }
 
             data = _glfw.win32.rawInput;
+            //printf("Data count: %d\n", size);
             if (data->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
             {
                 int cursorX, cursorY;
@@ -865,16 +864,14 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
                 {
                     dx = 0;
                     dy = 0;
-                    window->win32.rdpLastX = cursorX;
-                    window->win32.rdpLastY = cursorY;
                 }
                 else
                 {
                     dx = cursorX - window->win32.rdpLastX;
                     dy = cursorY - window->win32.rdpLastY;
                 }
-                // Challenge: re-centering the cursor causes issues over RDP, as the centering triggers an event.  Gah.
-                // But we need a centering to get the right data.  Gah 2.
+                window->win32.rdpLastX = cursorX;
+                window->win32.rdpLastY = cursorY;
                 //printf("WM_INPUT: Motion (%x %d %d) absolute, position (%d %d).  Computed delta from (? ?) is (%d %d)\n", data->data.mouse.usFlags, data->data.mouse.lLastX, data->data.mouse.lLastY, cursorX, cursorY, /*window->win32.lastCursorPosX, window->win32.lastCursorPosY, */dx, dy);
             }
             else
@@ -1788,6 +1785,7 @@ void _glfwPlatformPollEvents(void)
     window = _glfw.win32.disabledCursorWindow;
     if (window)
     {
+        //printf("Maybe centering, accumDx/Dy %d %d\n", window->win32.accumDx, window->win32.accumDy);
         // NOTE: Re-center the cursor only if it has moved since the last call,
         //       to avoid breaking glfwWaitEvents with WM_MOUSEMOVE
         if (window->win32.accumDx != 0 ||
@@ -1798,6 +1796,7 @@ void _glfwPlatformPollEvents(void)
 
             _glfwPlatformSetCursorPos(window, width / 2, height / 2);
 
+            window->win32.rdpLastX = window->win32.rdpLastX = INT_MAX;
             window->win32.accumDx = window->win32.accumDy = 0;
         }
     }
